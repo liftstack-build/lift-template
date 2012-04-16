@@ -1,4 +1,4 @@
-package com.owlunit.web.model
+package code.config
 
 import net.liftweb.mongodb.{MongoDB, DefaultMongoIdentifier}
 import net.liftweb.util.Props
@@ -15,6 +15,6 @@ object MongoConfig {
        Props.get("mongo.host", "127.0.0.1"),
        Props.getInt("mongo.port", 27017)
     )
-    MongoDB.defineDb(DefaultMongoIdentifier, new Mongo(server), "myapp")
+    MongoDB.defineDb(DefaultMongoIdentifier, new Mongo(server), "test")
   }
 }

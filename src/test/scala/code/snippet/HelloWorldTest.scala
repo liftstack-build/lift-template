@@ -1,15 +1,11 @@
 package code
 package snippet
 
-import org.specs._
-import org.specs.runner.JUnit4
-import org.specs.runner.ConsoleRunner
-import net.liftweb._
+import _root_.._
+import _root_.net.liftweb._
 import http._
-import net.liftweb.util._
-import net.liftweb.common._
-import org.specs.matcher._
-import org.specs.specification._
+import _root_.net.liftweb.util._
+import _root_.net.liftweb.common._
 import Helpers._
 import lib._
 

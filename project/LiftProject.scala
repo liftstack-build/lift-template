@@ -1,4 +1,4 @@
-package ii
+package project
 
 import sbt._
 import Keys._
@@ -8,7 +8,7 @@ import com.github.siasia.WebPlugin._
 import com.github.siasia.PluginKeys._
 import com.typesafe.startscript.StartScriptPlugin
 
-object IiBuild extends Build {
+object LiftProject extends Build {
 
   lazy val buildSettings = Seq(
     organization := "com.owlunit",
@@ -37,7 +37,7 @@ object IiBuild extends Build {
     organization := "com.owlunit",
     version := "0.1-SNAPSHOT",
     scalaVersion := "2.9.1",
-    resolvers ++= Seq(ScalaToolsSnapshots),
+    resolvers ++= defaultResolvers,
     scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-unchecked"),
     javacOptions ++= Seq("-Xlint:unchecked"),
     publishTo := Some(Resolver.file("file",  new File( "/Users/anton/Dev/Owls/repo/owlunit.github.com/repo/ivy/" )) ),
@@ -49,6 +49,11 @@ object IiBuild extends Build {
   // Dependencies
   /////////////////////
   
+  val defaultResolvers = Seq(
+    ScalaToolsSnapshots,
+    "Liftmodules repo" at "https://repository-liftmodules.forge.cloudbees.com/release"
+  )
+  
   object Dependencies {
 
     val lift = Seq(
@@ -56,14 +61,15 @@ object IiBuild extends Build {
       Dependency.liftWebKit,
       Dependency.liftWizard,
       Dependency.liftWidgets,
-      Dependency.liftMongo
+      Dependency.liftMongo,
+      Dependency.auth
     )
 
     val webPlugin = Seq(
       Dependency.jettyWebapp % "container",
       Dependency.jettyWebapp % "compile->default",
       Dependency.jettyServer % "compile->default",
-      Dependency.servlet % "compile->default"
+      Dependency.servlet     % "compile->default"
     )
 
   }
@@ -73,7 +79,7 @@ object IiBuild extends Build {
     // Versions
 
     object V {
-      val Lift      = "2.5-SNAPSHOT"
+      val Lift      = "2.4"
       val Jetty     = "7.3.1.v20110307"
     }
 
@@ -88,6 +94,7 @@ object IiBuild extends Build {
     val liftJson    = "net.liftweb"               %% "lift-json"           % V.Lift    % "compile->default"
     val liftMongo   = "net.liftweb"               %% "lift-mongodb-record" % V.Lift    % "compile->default"
     val rogue       = "com.foursquare"            %% "rogue"               % "1.1.6"   intransitive()
+    val auth        = "net.liftmodules"           %% "mongoauth"           % (V.Lift + "-0.3")
 
     val jettyWebapp = "org.eclipse.jetty"         %  "jetty-webapp"        % V.Jetty
     val jettyServer = "org.eclipse.jetty"         %  "jetty-server"        % V.Jetty

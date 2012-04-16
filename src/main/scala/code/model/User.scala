@@ -1,36 +1,146 @@
-package code
-package model
+package code.model
 
-import net.liftweb.mapper._
-import net.liftweb.util._
-import net.liftweb.common._
+import org.bson.types.ObjectId
+import org.joda.time.DateTime
 
-/**
- * The singleton that has methods for accessing the database
- */
-object User extends User with MetaMegaProtoUser[User] {
-  override def dbTableName = "users" // define the DB table name
-  override def screenWrap = Full(<lift:surround with="default" at="content">
-			       <lift:bind /></lift:surround>)
-  // define the order fields will appear in forms and output
-  override def fieldOrder = List(id, firstName, lastName, email,
-  locale, timezone, password, textArea)
+import net.liftweb._
+import common._
+import http.{StringField => _, BooleanField => _, _}
+import mongodb.record.field._
+import record.field._
+import util.FieldContainer
 
-  // comment this line out to require email validations
-  override def skipEmailValidation = true
-}
+import net.liftmodules.mongoauth._
+import net.liftmodules.mongoauth.field._
+import net.liftmodules.mongoauth.model._
 
 /**
- * An O-R mapped "User" class that includes first name, last name, password and we add a "Personal Essay" to it
+ * @author Anton Chebotaev
+ *         Owls Proprietary
  */
-class User extends MegaProtoUser[User] {
-  def getSingleton = User // what's the "meta" server
 
-  // define an additional field for a personal essay
-  object textArea extends MappedTextarea(this, 2048) {
-    override def textareaRows  = 10
-    override def textareaCols = 50
-    override def displayName = "Personal Essay"
+class User private () extends ProtoAuthUser[User] with ObjectIdPk[User] {
+  def meta = User
+
+  def userIdAsString: String = id.toString()
+
+  object name extends StringField(this, 64) {
+    override def displayName = "Name"
+    override def validations =
+      valMaxLen(64, "Name must be 64 characters or less") _ ::
+      super.validations
   }
+  object location extends StringField(this, 64) {
+    override def displayName = "Location"
+    override def validations =
+      valMaxLen(64, "Location must be 64 characters or less") _ ::
+      super.validations
+  }
+  object bio extends TextareaField(this, 160) {
+    override def displayName = "Bio"
+    override def validations =
+      valMaxLen(160, "Bio must be 160 characters or less") _ ::
+      super.validations
+  }
+
+  /*
+   * FieldContainers for various LiftScreeens.
+   */
+  def accountScreenFields = new FieldContainer {
+    def allFields = List(username, email)
+  }
+
+  def profileScreenFields = new FieldContainer {
+    def allFields = List(name, location, bio)
+  }
+
+  def registerScreenFields = new FieldContainer {
+    def allFields = List(username, email, password)
+  }
+
+  def whenCreated: DateTime = new DateTime(id.is.getTime)
 }
 
+object User extends User with ProtoAuthUserMeta[User] with Loggable {
+  import mongodb.BsonDSL._
+
+  override def collectionName = "users"
+
+  ensureIndex((email.name -> 1), true)
+  ensureIndex((username.name -> 1), true)
+
+  def findByEmail(in: String): Box[User] = find(email.name, in)
+  def findByUsername(in: String): Box[User] = find(username.name, in)
+  def findByStringId(id: String): Box[User] = if (ObjectId.isValid(id)) find(new ObjectId(id)) else Empty
+
+  override def onLogIn: List[User => Unit] = List((user: User) => User.loginCredentials.remove())
+  override def onLogOut: List[Box[User] => Unit] = List(
+    (x: Box[User]) => logger.debug("User.onLogOut called."),
+    (x: Box[User]) => x.foreach { u => ExtSession.deleteExtCookie() }
+  )
+
+  /*
+   * MongoAuth vars
+   */
+  private lazy val indexUrl = MongoAuth.indexUrl.vend
+  private lazy val registerUrl = MongoAuth.registerUrl.vend
+  private lazy val loginTokenAfterUrl = MongoAuth.loginTokenAfterUrl.vend
+
+  /*
+   * LoginToken
+   */
+  override def handleLoginToken: Box[LiftResponse] = {
+    val resp = S.param("token").flatMap(LoginToken.findByStringId) match {
+      case Full(at) if (at.expires.isExpired) => {
+        at.delete_!
+        RedirectWithState(indexUrl, RedirectState(() => { S.error("Login token has expired") }))
+      }
+      case Full(at) => find(at.userId.is).map(user => {
+        if (user.validate.length == 0) {
+          user.verified(true)
+          user.save
+          logUserIn(user)
+          at.delete_!
+          RedirectResponse(loginTokenAfterUrl)
+        }
+        else {
+          at.delete_!
+          regUser(user)
+          RedirectWithState(registerUrl, RedirectState(() => { S.notice("Please complete the registration form") }))
+        }
+      }).openOr(RedirectWithState(indexUrl, RedirectState(() => { S.error("User not found") })))
+      case _ => RedirectWithState(indexUrl, RedirectState(() => { S.warning("Login token not provided") }))
+    }
+
+    Full(resp)
+  }
+
+  /*
+   * ExtSession
+   */
+  def createExtSession(uid: ObjectId) { ExtSession.createExtSession(uid) }
+
+  /*
+  * Test for active ExtSession.
+  */
+  def testForExtSession: Box[Req] => Unit = {
+    ignoredReq => {
+      if (currentUserId.isEmpty) {
+        ExtSession.handleExtSession match {
+          case Full(es) => find(es.userId.is).foreach { user => logUserIn(user, false) }
+          case Failure(msg, _, _) =>
+            logger.warn("Error logging user in with ExtSession: %s".format(msg))
+          case Empty =>
+        }
+      }
+    }
+  }
+
+  // used during login process
+  object loginCredentials extends SessionVar[LoginCredentials](LoginCredentials(""))
+
+  // asInstanceOf[User] is usd to dismiss IDEA error report
+  object regUser extends SessionVar[User](createRecord.email(loginCredentials.is.email).asInstanceOf[User])
+}
+
+case class LoginCredentials(email: String)
